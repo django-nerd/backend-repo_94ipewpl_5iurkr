@@ -1,48 +1,62 @@
 """
-Database Schemas
+Database Schemas for Shopping Bot SaaS
 
-Define your MongoDB collection schemas here using Pydantic models.
-These schemas are used for data validation in your application.
-
-Each Pydantic model represents a collection in your database.
-Model name is converted to lowercase for the collection name:
-- User -> "user" collection
-- Product -> "product" collection
-- BlogPost -> "blogs" collection
+Each Pydantic model represents a MongoDB collection. The collection name is the
+lowercase class name (e.g., User -> "user").
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, EmailStr
+from typing import Optional, List, Literal, Dict, Any
 
-# Example schemas (replace with your own):
 
 class User(BaseModel):
-    """
-    Users collection schema
-    Collection name: "user" (lowercase of class name)
-    """
-    name: str = Field(..., description="Full name")
-    email: str = Field(..., description="Email address")
-    address: str = Field(..., description="Address")
-    age: Optional[int] = Field(None, ge=0, le=120, description="Age in years")
-    is_active: bool = Field(True, description="Whether user is active")
+    """Users collection schema"""
+    email: EmailStr = Field(..., description="Email address")
+    name: Optional[str] = Field(None, description="Display name")
+    plan: Literal["free", "pro", "enterprise"] = Field("free", description="Subscription plan")
+    is_active: bool = Field(True, description="Whether the user is active")
 
-class Product(BaseModel):
-    """
-    Products collection schema
-    Collection name: "product" (lowercase of class name)
-    """
-    title: str = Field(..., description="Product title")
-    description: Optional[str] = Field(None, description="Product description")
-    price: float = Field(..., ge=0, description="Price in dollars")
-    category: str = Field(..., description="Product category")
-    in_stock: bool = Field(True, description="Whether product is in stock")
 
-# Add your own schemas here:
-# --------------------------------------------------
+class Bot(BaseModel):
+    """Bots configured by users to perform shopping tasks"""
+    user_id: str = Field(..., description="Owner user id")
+    name: str = Field(..., description="Bot display name")
+    goals: Optional[str] = Field(None, description="Bot high-level goal or description")
+    retailers: List[str] = Field(default_factory=list, description="Allowed retailers")
+    constraints: Dict[str, Any] = Field(
+        default_factory=lambda: {"budget": None, "max_price": None, "approval_mode": "manual"},
+        description="Constraints such as budget, max price, and approval mode",
+    )
+    model: Optional[str] = Field(None, description="Model identifier or ACP model config")
+    acp_config: Dict[str, Any] = Field(default_factory=dict, description="ACP specific configuration")
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+
+class Task(BaseModel):
+    """A single shopping run initiated by a user/bot"""
+    user_id: str = Field(..., description="Owner user id")
+    bot_id: str = Field(..., description="Bot used for the run")
+    prompt: str = Field(..., description="User request or shopping criteria")
+    status: Literal["queued", "running", "succeeded", "failed", "awaiting_approval"] = Field(
+        "queued", description="Current status of the task"
+    )
+    candidates: List[Dict[str, Any]] = Field(default_factory=list, description="Candidate products")
+    selection: Optional[Dict[str, Any]] = Field(None, description="Selected product")
+    logs: List[str] = Field(default_factory=list, description="Log messages for the run")
+
+
+class Order(BaseModel):
+    """Represents a checkout/order flow - MVP keeps it optional/manual"""
+    task_id: str = Field(..., description="Associated task id")
+    retailer: Optional[str] = None
+    status: Literal["created", "approved", "purchased", "failed"] = "created"
+    total: Optional[float] = None
+    external_ids: Dict[str, Any] = Field(default_factory=dict)
+    receipts: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class RetailerAccount(BaseModel):
+    """Optional per-user retailer credentials (not used in MVP purchasing)"""
+    user_id: str
+    retailer: str
+    credentials: Dict[str, Any] = Field(default_factory=dict)
+    status: Literal["unverified", "verified", "error"] = "unverified"
